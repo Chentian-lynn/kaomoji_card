@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>FlipBook Demo</title>
+    <style>
+        html,
+        body {
+            margin: 0;
+            height: 100%;
+            background: #000;
+            overflow: hidden;
+        }
+
+        /* 背景层 */
+        .bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            /* object-fit: cover; */
+            object-position: center;
+            pointer-events: none;
+            opacity: 1;
+            z-index: 0;
+            filter: blur(0px);
+            transition: filter 1s ease;
+        }
+
+        .bg.blur {
+            filter: blur(2px);
+        }
+
+        .bgframe {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            opacity: 1;
+            z-index: 2000;
+        }
+
+        #book-frame {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+            z-index: 10;
+            pointer-events: none;
+            transition: transform 1.2s ease;
+        }
+
+        #book-wrapper {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: auto;
+        }
+
+        .stage {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+            z-index: 1;
+        }
+
+        /* ⭐ 翻页 + 翻面公用基础 */
+        .page {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            transform-origin: 50% 0%;
+            transition: transform var(--duration) ease-in-out;
+            will-change: transform;
+            backface-visibility: hidden;
+            transform-style: preserve-3d;
+        }
+
+        .page:hover {
+            filter: drop-shadow(0px 6px 12px rgba(0, 0, 0, 0.25));
+        }
+
+        @keyframes shake {
+            0%   { filter: drop-shadow(5px 0px 5px rgba(0,0,0,0.2)); }
+            25%  { filter: drop-shadow(-5px 0px 5px rgba(0,0,0,0.2)); }
+            50%  { filter: drop-shadow(5px 0px 5px rgba(0,0,0,0.2)); }
+            75%  { filter: drop-shadow(-5px 0px 5px rgba(0,0,0,0.2)); }
+            100% { filter: drop-shadow(5px 0px 5px rgba(0,0,0,0.2)); }
+        }
+
+        /* front 正面 */
+        .page .front {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+        }
+
+        /* back 背面 */
+        .page .back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            transform: rotateY(180deg);
+            backface-visibility: hidden;
+        }
+
+        .page img {
+            display: block;
+            height: 85vh;
+            object-fit: contain;
+            user-select: none;
+            pointer-events: none;
+        }
+
+        /* 📘 翻页 (你原来的效果) */
+        .page.flipped {
+            transform: translate(-50%, calc(-50% - var(--lift))) rotate(var(--angle));
+        }
+
+        /* 📕 单页翻面（rotateY180°） */
+        .page.face-flipped {
+            transform: translate(-50%, -50%) rotateY(180deg);
+        }
+
+        /* 🔥 浮动 emoji 默认隐藏 */
+        .floating-container {
+            display: none;
+        }
+
+        .floating-container.floating-visible {
+            display: block;
+        }
+
+        /* 🔙 返回按钮 */
+        #reset-btn {
+            position: fixed;
+            left: 8%;
+            top: 32%;
+            z-index: 3000;
+            padding: 10px 18px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 0px solid #fff;
+            border-radius: 8px;
+            color: rgb(255, 54, 148);
+            font-size: 36px;
+            cursor: pointer;
+            user-select: none;
+            display: none;
+            font-family: "Gill Sans", "Gill Sans MT", Calibri, sans-serif;
+        }
+
+        #next-btn {
+            position: fixed;
+            left: 13%;
+            top: 55%;
+            z-index: 3000;
+            padding: 10px 18px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 0px solid #fff;
+            border-radius: 8px;
+            color: rgb(255, 54, 148);
+            font-size: 36px;
+            cursor: pointer;
+            user-select: none;
+            display: none;
+            font-family: "Gill Sans", "Gill Sans MT", Calibri, sans-serif;
+        }
+
+        /* ✨ 单页翻面按钮 */
+        #flip-page-btn {
+            position: fixed;
+            left: 0%;
+            top: 50%;
+            transform: translate(-50%, -50%); /* 完美居中 */
+            z-index: 5000;
+
+            width: 10px;   /* 可自定义宽度 */
+            height: 70%;   /* 可自定义高度 */
+
+            background: transparent; /* 不显示背景 */
+            border: none;            /* 不显示边框 */
+            color: transparent;      /* 不显示文字 */
+
+            opacity: 0.5;              /* 完全不可见，但仍可点击 */
+
+            cursor: pointer;
+            user-select: none;
+        }
+
+        /* #flip-page-btn:hover {
+            background: rgba(255, 255, 255, 0.35);
+        } */
+
+        /* 🌟 新增：卡牌列表 Grid 容器 */
+        #grid-layout {
+            position: fixed;
+            width: 70vw;
+            height: 80vh;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transform-style: preserve-3d;
+            display: none;
+            overflow-y: scroll;
+            overflow-x: scroll;
+            z-index: 2000;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0);
+            border-radius: 12px;
+        }
+
+        #grid-layout .page img {
+            height: 40vh;
+            object-fit: contain;
+        }
+
+        /* 🌟 卡片淡入动画 */
+        .grid-item {
+            opacity: 0;
+            transition: opacity 3.0s ease, transform 0.6s ease;
+        }
+
+        .grid-item.show {
+            opacity: 1;
+            transition: opacity 3.0s ease, transform 0.6s ease;
+        }
+
+        /* 🌟 卡牌列表按钮 */
+        #grid-btn {
+            position: fixed;
+            right: 8%;
+            top: 28%;
+            z-index: 3000;
+            padding: 10px 18px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 0px solid #fff;
+            border-radius: 8px;
+            color: rgb(255, 54, 148);
+            font-size: 28px;
+            cursor: pointer;
+            user-select: none;
+            display: block;
+            font-family: "Gill Sans", "Gill Sans MT", Calibri, sans-serif;
+        }
+
+        #grid-btn:hover {
+            background: rgba(255, 255, 255, 0.35);
+        }
+    </style>
+</head>
+
+<body>
+
+    <button id="reset-btn">Back</button>
+    <button id="next-btn">Next</button>
+    <button id="flip-page-btn">flip current page</button>
+    <button id="grid-btn">Library</button>
+
+    <div id="book-frame">
+        <div id="book-wrapper">
+            <div class="stage" id="stage"></div>
+        </div>
+    </div>
+
+    <div id="grid-layout"></div>
+
+    <img class="bg" src="imgs/bg_0.png" alt="背景图" />
+    <img class="bgframe" src="imgs/bg_1.png" alt="背景图" />
+
+    <script type="module">
+        import { FlipBook } from './flipbook.js';
+        import { FloatingEmojis } from './floatingEmojis.js';
+        import { FloatingImages } from './floatingImages.js';
+        import { EmojiPath } from './emojiPath.js';
+
+        const stage = document.getElementById('stage');
+        const frame = document.getElementById('book-frame');
+        const wrapper = document.getElementById('book-wrapper');
+        const bg = document.querySelector('.bg');
+        const resetBtn = document.getElementById("reset-btn");
+        const nextBtn = document.getElementById("next-btn");
+        const flipPageBtn = document.getElementById("flip-page-btn");
+        const gridBtn = document.getElementById("grid-btn");
+        const gridLayout = document.getElementById("grid-layout");
+
+        const book = new FlipBook(stage, { angle: 80, lift: 180, duration: 800 });
+        const imgCount = 12;
+        const images = Array.from({ length: imgCount }, (_, i) => `imgs/${i + 1}f.png`);
+        const backfaces = Array.from({ length: imgCount }, (_, i) => `imgs/${i + 1}b.png`);
+        let onTable = true;
+
+        frame.style.transition = "none";
+        await book.loadImages(images);
+        await book.loadBackfaces(backfaces);
+
+        function setInitialPose() {
+            frame.style.transform = `
+                translate(310px, 20px)
+                scale(0.5)
+                rotateX(40deg)
+                rotateZ(-5deg)
+                perspective(820px)
+            `;
+            onTable = true;
+        }
+        setInitialPose();
+
+        requestAnimationFrame(() => {
+            frame.style.transition = "transform 1.2s ease";
+        });
+
+        /* =====================================================
+              ⭐ 单页翻面
+        ===================================================== */
+        // flipPageBtn.addEventListener("click", () => {
+        //     const idx = book.getCurrentPage();
+        //     book.toggleFace(idx);
+        // });
+
+        for (let i = 0; i < book.pages.length; i++) {
+            book.pages[i].addEventListener("click", () => {
+                if (layoutMode === "grid" || onTable) return;
+                const idx = book.getCurrentPage();
+                book.toggleFace(idx);
+            });
+        }
+
+        function delay(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        
+        for (let i = 0; i < book.backfaces.length; i++) {
+            book.backfaces[i].addEventListener("click", async () => {
+                if (onTable) return;
+
+                if (layoutMode === "grid") {
+                    switchToBook();
+
+                    // 扇形展开效果（0.1 秒间隔翻页）
+                    // await delay(50);
+                    for (let j = 0; j < i; j++) {
+                        await delay(50);  // 100ms = 0.1s
+                        book.flipNext();
+                    }
+                } else {
+                    const idx = book.getCurrentPage();
+                    book.toggleFace(idx);
+                }
+            });
+        }
+
+
+        /* =====================================================
+              🎉 Floating Emoji
+        ===================================================== */
+        const emojiList = [
+            "ლ(ಠ益ಠ)ლ", "(ಠ ʖ̯ ಠ)", "(눈_눈)", "(¬益¬)", "(ಠ‿↼)", "(¬_¬)", "(ಠoಠ)",
+            "(عʘДʘ)", "ʕʘ‿ʘʔ", "(ノಠ益ಠ)ノ彡┻━┻", "٩(╬ʘ益ʘ╬)۶", "(˘ㅅ˘)♡",
+            "٩(º౪º)۶", "(•ω•ฅ)", "(๑>ᴗ<๑)♡", "ʕಠᴥಠʔ", "ㅇㅅㅇ", "(╬益ಠ)", "(ಥTಥ)",
+            "(٩(｡•́‿•̀｡)۶)", "(￣︶￣)", "(づ￣ ³￣)づ", "(｡♡‿♡｡)", "(ʘ‿ʘ)", "(•ᴗ•)و ̑̑",
+            "ლ(ಠ益ಠ)ლ", "(ಠ ʖ̯ ಠ)", "(눈_눈)", "(¬益¬)", "(ಠ‿↼)", "(¬_¬)", "(ಠoಠ)",
+            "(عʘДʘ)", "ʕʘ‿ʘʔ", "(ノಠ益ಠ)ノ彡┻━┻", "٩(╬ʘ益ʘ╬)۶", "(˘ㅅ˘)♡",
+            "٩(º౪º)۶", "(•ω•ฅ)", "(๑>ᴗ<๑)♡", "ʕಠᴥಠʔ", "ㅇㅅㅇ", "(╬益ಠ)", "(ಥTಥ)",
+            "(٩(｡•́‿•̀｡)۶)", "(￣︶￣)", "(づ￣ ³￣)づ", "(｡♡‿♡｡)", "(ʘ‿ʘ)", "(•ᴗ•)و ̑̑"
+        ];
+
+        const FE = new FloatingEmojis({
+            count: 80,
+            floatRange: 25,
+            repelRadius: 160,
+            speed: 0.5,
+            emojis: emojiList
+        });
+
+        const floatingContainer = FE.container;
+        floatingContainer.classList.add("floating-container");
+
+        /* =====================================================
+              点击书 → 进入模式
+        ===================================================== */
+        wrapper.addEventListener("click", () => {
+            if (layoutMode === "grid") return;
+
+            frame.style.transform = `
+                translate(calc(50vw - 50%), calc(50vh - 50%))
+                scale(1)
+                rotateX(0deg)
+                rotateY(0deg)
+                perspective(1200px)
+            `;
+            bg.classList.add("blur");
+            floatingContainer.classList.add("floating-visible");
+            resetBtn.style.display = "block";
+            nextBtn.style.display = "block";
+            onTable = false;
+        });
+
+        /* =====================================================
+              返回按钮
+        ===================================================== */
+        resetBtn.addEventListener("click", () => {
+            const currentPage = book.getCurrentPage();
+            if(currentPage > 0)
+            {
+                book.unflipLast();
+            }
+            else
+            {
+                setInitialPose();
+                bg.classList.remove("blur");
+                floatingContainer.classList.remove("floating-visible");
+                resetBtn.style.display = "none";
+                nextBtn.style.display = "none";
+            }
+        });
+        nextBtn.addEventListener("click", () => {
+            book.flipNext();
+        });
+
+        /* =====================================================
+              emojiPath 保持不动
+        ===================================================== */
+        const emojiPath = [...emojiList];
+        await delay(500); // 等待 FlipBook 初始化完成
+        new EmojiPath({
+            flipbook: book,
+            pageIndex: 0,
+            svgUrl: "./output3.svg",
+            emojis: emojiPath,
+            speed: 50,
+            size: 120,
+            scalePercent: 0.65,
+            eyeLeft : 'ಥ',
+            eyeRight : 'ಥ',
+            mouth : 'T',
+            color : "#b62c6fff",
+        });
+
+        new EmojiPath({
+            flipbook: book,
+            pageIndex: 1,
+            svgUrl: "./output4.svg",
+            emojis: emojiPath,
+            speed: 50,
+            size: 120,
+            scalePercent: 0.6,
+            eyeLeft : '๏',
+            eyeRight : 'ò',
+            mouth : '益',
+            color : "#634be0ff",
+            eyeLeftPos : { x: 0.35, y: 0.42 },
+            eyeRightPos : { x: 0.55, y: 0.42 },
+            mouthPos : { x: 0.45, y: 0.5 }
+        });
+
+        new EmojiPath({
+            flipbook: book,
+            pageIndex: 2,
+            svgUrl: "./output5.svg",
+            emojis: emojiPath,
+            speed: 50,
+            size: 100,
+            scalePercent: 0.7,
+            eyeLeft : '囧',
+            eyeRight : '囧',
+            mouth : 'ㅇㅅㅇ',
+            color : "#fdff69ff",
+            eyeLeftPos : { x: 0.4, y: 0.45 },
+            eyeRightPos : { x: 0.6, y: 0.45 },
+            mouthPos : { x: 0.5, y: 0.5 }
+        }); 
+
+        new EmojiPath({
+            flipbook: book,
+            pageIndex: 3,
+            svgUrl: "./output6.svg",
+            emojis: emojiPath,
+            speed: 50,
+            size: 100,
+            scalePercent: 0.6,
+            color : "#496effff",
+            eyeLeft : '눈',
+            eyeRight : '눈',
+            mouth : '_',
+        });
+
+        new EmojiPath({
+            flipbook: book,
+            pageIndex: 4,
+            svgUrl: "./output7.svg",
+            emojis: emojiPath,
+            speed: 50,
+            size: 100,
+            scalePercent: 0.5,
+            color : "#81f2ffff",
+            eyeLeft : 'ಠ',
+            eyeRight : '↼',
+            mouth : '‿',
+            // eyeLeft : 'ວ',
+            // eyeRight : 'ວ',
+            // mouth : 'ʘ',
+        });
+
+        new EmojiPath({
+            flipbook: book,
+            pageIndex: 5,
+            svgUrl: "./output8.svg",
+            emojis: emojiPath,
+            speed: 50,
+            size: 100,
+            scalePercent: 0.6,
+            color : "#634be0ff",
+            eyeLeftPos : { x: 0.4, y: 0.5 },
+            eyeRightPos : { x: 0.6, y: 0.5 },
+            mouthPos : { x: 0.5, y: 0.56 },
+            eyeLeft : '๕',
+            eyeRight : '๕',
+            mouth : '‿',
+        });
+
+        new EmojiPath({
+            flipbook: book,
+            pageIndex: 6,
+            svgUrl: "./output9.svg",
+            emojis: emojiPath,
+            speed: 50,
+            size: 100,
+            scalePercent: 0.6,
+            color : "#fdff69ff",
+            eyeLeft : 'ಠ',
+            eyeRight : 'ಠ',
+            mouth : 'o',            
+        });
+
+        new EmojiPath({
+            flipbook: book,
+            pageIndex: 7,
+            svgUrl: "./output10.svg",
+            emojis: emojiPath,
+            speed: 50,
+            size: 100,
+            scalePercent: 0.6,
+            color : "#c3ff8bff",
+            eyeLeft : 'क',
+            eyeRight : 'क',
+            mouth : '︵', 
+        });
+
+        new EmojiPath({
+            flipbook: book,
+            pageIndex: 8,
+            svgUrl: "./output11.svg",
+            emojis: emojiPath,
+            speed: 50,
+            size: 100,
+            scalePercent: 0.6,
+            color : "#b0cfffff",
+            eyeLeft : 'º',
+            eyeRight : 'º',
+            mouth : '౪', 
+        });
+
+        new EmojiPath({
+            flipbook: book,
+            pageIndex: 9,
+            svgUrl: "./output12.svg",
+            emojis: emojiPath,
+            speed: 50,
+            size: 100,
+            scalePercent: 0.6,
+            color : "#ffccfcff",
+            eyeLeft : '¬',
+            eyeRight : '¬',
+            mouth : '_', 
+        });
+
+        new EmojiPath({
+            flipbook: book,
+            pageIndex: 10,
+            svgUrl: "./output13.svg",
+            emojis: emojiPath,
+            speed: 50,
+            size: 100,
+            scalePercent: 0.6,
+            color : "#81f2ffff",
+            eyeLeft : '｡•́',
+            eyeRight : '•｡',
+            mouth : '‿', 
+        });
+
+        new EmojiPath({
+            flipbook: book,
+            pageIndex: 11,
+            svgUrl: "./output14.svg",
+            emojis: emojiPath,
+            speed: 50,
+            size: 100,
+            scalePercent: 0.6,
+            color : "#7e4bffff",
+            eyeLeft : 'ლ',
+            eyeRight : 'ლ',
+            mouth : '‿', 
+            eyeLeftPos : { x: 0.45, y: 0.45 },
+            eyeRightPos : { x: 0.65, y: 0.45 },
+            mouthPos : { x: 0.55, y: 0.52 }
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') book.flipNext();
+            else if (e.key === 'ArrowRight') book.unflipLast();
+        });
+
+        /* =====================================================
+              🌟 新增：Grid / Book 模式切换
+        ===================================================== */
+        let layoutMode = "book";
+
+        function switchToGrid() {
+            layoutMode = "grid";
+
+            // frame.style.display = "none";
+            gridLayout.style.display = "grid";
+            gridLayout.style.gridTemplateColumns = "repeat(4, 1fr)";
+            gridLayout.style.gridAutoRows = "auto";
+            gridLayout.style.gap = "10px";
+
+            gridLayout.innerHTML = "";
+
+            while (book.flipped.length > 0)
+                book.unflipLast();
+
+            for (let i = 0; i < book.pages.length; i++) {
+                book.flipFace(i);
+            }
+
+
+            book.backfaces.forEach(bf => {
+                // bf.style.transform = "rotateY(180deg)";
+                bf.style.position = "relative";
+                // bf.style.left = "unset";
+                // bf.style.top = "unset"; 
+                bf.style.width = "240px";
+                bf.style.height = "280px";
+                // bf.style.margin = "100px";
+                bf.classList.add("grid-item");
+                gridLayout.appendChild(bf);
+
+                requestAnimationFrame(() => {
+                    bf.classList.add("show");
+                });
+            });
+        }
+
+        function switchToBook() {
+            layoutMode = "book";
+
+            gridLayout.style.display = "none";
+            frame.style.display = "block";
+            for (let i = 0; i < book.pages.length; i++) {
+                book.unflipFace(i);
+            }
+            book.pages.forEach((pg, i) => {
+                stage.appendChild(pg);
+
+                pg.style = "";
+                pg.style.zIndex = 1000 - i;
+            });
+
+            book.backfaces.forEach(bf => {
+                stage.appendChild(bf);
+
+                bf.style = "";
+                bf.classList.remove("grid-item");
+                requestAnimationFrame(() => {
+                    bf.classList.remove("show");
+                });
+                bf.style.zIndex = 1000 - book.pages.indexOf(bf);
+            });
+
+            console.log(book.getCurrentPage());
+            book.unflipFace(0);
+            //setInitialPose();
+        }
+
+        gridBtn.addEventListener("click", () => {
+            if (layoutMode === "book") switchToGrid();
+            else switchToBook();
+        });
+
+    </script>
+
+</body>
+
+</html>
